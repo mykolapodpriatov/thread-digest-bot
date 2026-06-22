@@ -1,0 +1,27 @@
+{
+  "channel_id": "team-eng",
+  "platform": "telegram",
+  "messages": [
+    {
+      "id": "m1",
+      "author": { "id": "u_ada", "display": "Ada" },
+      "text": "Let's ship the onboarding flow on Friday once QA signs off.",
+      "ts_label": "Mon 09:14",
+      "permalink": "https://t.me/c/1234567890/1"
+    },
+    {
+      "id": "m2",
+      "author": { "id": "u_bob", "display": "Bob" },
+      "text": "Sounds good. I'll write the release notes before then.",
+      "ts_label": "Mon 09:16",
+      "permalink": "https://t.me/c/1234567890/2"
+    },
+    {
+      "id": "m3",
+      "author": { "id": "u_cleo", "display": "Cleo" },
+      "text": "The rollback plan is ready. One open thing: should we gate it behind a flag?",
+      "ts_label": "Mon 09:21",
+      "permalink": "https://t.me/c/1234567890/3"
+    }
+  ]
+}

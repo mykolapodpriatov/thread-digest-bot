@@ -1,0 +1,114 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "thread-digest-bot"
+version = "0.1.0"
+description = "Turn sprawling Telegram/Slack threads into structured, attributed decision logs committed to Git as an append-only audit trail."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Mykola Podpriatov", email = "nsplotos@gmail.com" }]
+keywords = ["telegram", "slack", "llm", "decision-log", "git", "audit-trail"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Chat",
+    "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.6",
+    "GitPython>=3.1",
+    "typer>=0.12",
+    "rich>=13.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mykolapodpriatov/thread-digest-bot"
+Repository = "https://github.com/mykolapodpriatov/thread-digest-bot"
+
+[project.optional-dependencies]
+telegram = ["python-telegram-bot>=21.0"]
+slack = ["slack-bolt>=1.18"]
+openai = ["openai>=1.30"]
+anthropic = ["anthropic>=0.30"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+thread-digest-bot = "thread_digest_bot.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/thread_digest_bot"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "B008", # function call in default argument (typer relies on this)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+no_implicit_reexport = true
+show_error_codes = true
+files = ["src"]
+mypy_path = "src"
+explicit_package_bases = true
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = ["git.*", "telegram.*", "slack_bolt.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["thread_digest_bot"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
+]
