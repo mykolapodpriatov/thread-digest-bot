@@ -67,7 +67,7 @@ DecisionStore(".", config=StoreConfig(commit=True)).append(log)
 
 | Command | Description |
 | --- | --- |
-| `digest-file THREAD.json [--out FILE] [--commit] [--repo-root DIR] [--config TOML]` | Offline digest of a validated thread JSON into an attributed log. |
+| `digest-file THREAD.json [--out FILE] [--commit] [--repo-root DIR] [--config TOML] [--fixture NAME] [--range-label LABEL]` | Offline digest of a validated thread JSON into an attributed log. |
 | `rollup --channel ID --period weekly --period-key 2026-W25` | Build the label/identity for a periodic rollup. |
 | `run --config config.toml` | Start the configured bot(s) (live adapters land in M3). |
 
