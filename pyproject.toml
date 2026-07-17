@@ -90,8 +90,20 @@ mypy_path = "src"
 explicit_package_bases = true
 namespace_packages = true
 
+# Third-party libraries that ship no type information.
 [[tool.mypy.overrides]]
 module = ["git.*", "telegram.*", "slack_bolt.*"]
+ignore_missing_imports = true
+
+# Optional LLM extras. The core package runs offline against FakeLLM, so CI type-checks
+# with only the base + dev dependencies installed and these SDKs are absent. Their
+# adapters import them lazily behind an ImportError guard, so an unresolved import here
+# is expected rather than a defect. Scoped to these modules only, so a missing or
+# misspelled import anywhere else is still a hard error. When the extras *are* installed
+# (e.g. locally), mypy resolves the real types and this override is inert -- unlike a
+# file-level `# type: ignore`, which `warn_unused_ignores = true` would then flag.
+[[tool.mypy.overrides]]
+module = ["openai.*", "anthropic.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
