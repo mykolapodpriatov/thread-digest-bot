@@ -206,10 +206,11 @@ def test_anthropic_empty_tool_use_yields_empty_then_retry() -> None:
     assert backend.complete_json("prompt", RawDecisionLog) == RawDecisionLog()
 
 
-# -- Real-SDK construction (the extras ARE installed in this environment) -----
+# -- Real-SDK construction (skipped unless the optional extra is installed) ---
 
 
 def test_openai_constructs_real_client_with_key() -> None:
+    pytest.importorskip("openai")
     from thread_digest_bot.llm.openai import OpenAIBackend
 
     backend = OpenAIBackend(model="gpt-4o-mini", api_key="sk-test-not-used")
@@ -218,6 +219,7 @@ def test_openai_constructs_real_client_with_key() -> None:
 
 
 def test_anthropic_constructs_real_client_with_key() -> None:
+    pytest.importorskip("anthropic")
     from thread_digest_bot.llm.anthropic import AnthropicBackend
 
     backend = AnthropicBackend(model="claude-3-5-sonnet-latest", api_key="sk-test-not-used")
