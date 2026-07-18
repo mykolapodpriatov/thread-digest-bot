@@ -25,7 +25,8 @@ import typer
 from pydantic import ValidationError
 
 from thread_digest_bot.config import AppConfig, LLMConfig, StorageConfig, load_config
-from thread_digest_bot.digest import digest
+from thread_digest_bot.digest import digest_with_report
+from thread_digest_bot.grounding import GroundingReport
 from thread_digest_bot.ingest import ThreadInput, thread_from_input
 from thread_digest_bot.llm import LLMBackend
 from thread_digest_bot.llm.factory import build_llm
@@ -60,6 +61,14 @@ def _render_for_format(log: DecisionLog, output_format: str) -> str:
     if output_format == "chat":
         return render_chat_reply(log)
     return render_markdown_entry(log)  # "md"
+
+
+def _print_grounding_report(report: GroundingReport) -> None:
+    """Print the grounding drop report to stderr (keeps stdout machine-clean)."""
+    _err("Grounding report:")
+    _err(f"  dropped hallucinated citations: {report.dropped_hallucinated_citations}")
+    _err(f"  dropped invalid quotes: {report.dropped_invalid_quotes}")
+    _err(f"  dropped zero-citation items: {report.dropped_zero_citation_items}")
 
 
 def _load_thread_input(path: Path) -> ThreadInput:
@@ -131,6 +140,10 @@ def digest_file(
             help="Output format: 'chat', 'md', or 'json'. Default prints chat reply + md.",
         ),
     ] = None,
+    stats: Annotated[
+        bool,
+        typer.Option("--stats", help="Print a grounding drop report to stderr."),
+    ] = False,
 ) -> None:
     """Digest a thread JSON file offline into an attributed decision log."""
     if output_format is not None and output_format not in _DIGEST_FORMATS:
@@ -144,7 +157,7 @@ def digest_file(
     thread = thread_from_input(thread_input)
     llm = _build_llm_from_config(config, fixture)
 
-    log = digest(thread, llm, range_label=range_label)
+    log, report = digest_with_report(thread, llm, range_label=range_label)
     entry = render_markdown_entry(log)
 
     if commit:
@@ -162,6 +175,9 @@ def digest_file(
         typer.echo(entry, nl=False)
     else:
         typer.echo(_render_for_format(log, output_format))
+
+    if stats:
+        _print_grounding_report(report)
 
 
 def _commit_entry(log: DecisionLog, repo_root: Path, config_path: Path | None) -> None:

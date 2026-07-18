@@ -22,8 +22,13 @@ Example:
 
 from __future__ import annotations
 
-from thread_digest_bot.digest import build_prompt, digest
-from thread_digest_bot.grounding import GroundingPolicy, ground
+from thread_digest_bot.digest import build_prompt, digest, digest_with_report
+from thread_digest_bot.grounding import (
+    GroundingPolicy,
+    GroundingReport,
+    ground,
+    ground_with_report,
+)
 from thread_digest_bot.ingest import (
     MessageInput,
     ThreadInput,
@@ -106,6 +111,7 @@ __all__ = [
     "FakeScheduler",
     "FetchError",
     "GroundingPolicy",
+    "GroundingReport",
     "IntervalScheduler",
     "LLMBackend",
     "LLMError",
@@ -133,8 +139,10 @@ __all__ = [
     "compute_digest_key",
     "compute_rollup_key",
     "digest",
+    "digest_with_report",
     "discord_permalink",
     "ground",
+    "ground_with_report",
     "render_chat_reply",
     "render_json_entry",
     "render_markdown_entry",

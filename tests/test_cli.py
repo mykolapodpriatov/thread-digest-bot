@@ -127,6 +127,36 @@ def test_digest_file_invalid_format_exits(tmp_path: Path) -> None:
     assert "unknown --format" in result.output
 
 
+def test_digest_file_stats_reports_hallucination_and_zero_item(tmp_path: Path) -> None:
+    # The invalid_ids fixture adds a decision citing a non-existent id, which is dropped
+    # (hallucinated citation) and leaves that item with zero citations.
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(
+        app, ["digest-file", str(thread_path), "--fixture", "invalid_ids", "--stats"]
+    )
+    assert result.exit_code == 0
+    assert "Grounding report:" in result.output
+    assert "dropped hallucinated citations: 1" in result.output
+    assert "dropped zero-citation items: 1" in result.output
+
+
+def test_digest_file_stats_reports_invalid_quote(tmp_path: Path) -> None:
+    # The fabricated_quote fixture cites a real message with a quote that is not in it.
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(
+        app, ["digest-file", str(thread_path), "--fixture", "fabricated_quote", "--stats"]
+    )
+    assert result.exit_code == 0
+    assert "dropped invalid quotes: 1" in result.output
+
+
+def test_digest_file_no_stats_by_default(tmp_path: Path) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(app, ["digest-file", str(thread_path)])
+    assert result.exit_code == 0
+    assert "Grounding report:" not in result.output
+
+
 def test_digest_file_missing_file_nonzero_exit(tmp_path: Path) -> None:
     result = runner.invoke(app, ["digest-file", str(tmp_path / "nope.json")])
     assert result.exit_code == EXIT_USAGE_ERROR
