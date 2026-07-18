@@ -1,11 +1,12 @@
 """Command-line interface (``thread-digest-bot``).
 
-Three subcommands mirror the plan:
+Four subcommands mirror the plan:
 
 * ``digest-file`` — offline digest of a validated ``thread.json`` using the configured
   (or Fake) LLM; great for demos and CI. The thread file is validated against a strict
   Pydantic schema first, so a malformed file fails with a clear message and a non-zero
   exit code rather than a stack trace.
+* ``search`` — read-side substring search over the committed decision logs.
 * ``rollup`` — build a periodic rollup for a channel.
 * ``run`` — start the bot(s) from a config (platform adapters land in milestone M3).
 
@@ -15,6 +16,7 @@ All offline paths are deterministic: with the ``fake`` LLM provider, ``digest-fi
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Annotated
@@ -29,6 +31,7 @@ from thread_digest_bot.llm import LLMBackend
 from thread_digest_bot.llm.factory import build_llm
 from thread_digest_bot.render import render_chat_reply, render_markdown_entry
 from thread_digest_bot.rollup import rollup_label
+from thread_digest_bot.search import search_logs
 from thread_digest_bot.store import DecisionStore, StoreConfig
 from thread_digest_bot.types import DecisionLog
 
@@ -144,6 +147,49 @@ def _commit_entry(log: DecisionLog, repo_root: Path, config_path: Path | None) -
         store_config = StoreConfig(commit=True)
     store = DecisionStore(repo_root, config=store_config)
     store.append(log)
+
+
+@app.command("search")
+def search(
+    query: Annotated[
+        str,
+        typer.Argument(help="Case-insensitive substring to find across the decision logs."),
+    ],
+    repo_root: Annotated[
+        Path,
+        typer.Option("--repo-root", help="Repo root containing docs/decisions."),
+    ] = Path(),
+    channel: Annotated[
+        str | None,
+        typer.Option("--channel", help="Restrict the search to a single channel id."),
+    ] = None,
+    output_format: Annotated[
+        str,
+        typer.Option("--format", help="Output format: 'term' (default) or 'json'."),
+    ] = "term",
+) -> None:
+    """Search the committed decision logs for a substring.
+
+    Reads ``docs/decisions/<channel>.md`` back into entries and matches the query against
+    each decision, action item, and open question. A repository with no ``docs/decisions``
+    directory yields no matches rather than an error.
+    """
+    if output_format not in {"term", "json"}:
+        _err(f"Error: unknown --format {output_format!r}; expected 'term' or 'json'.")
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    hits = search_logs(repo_root, query, channel=channel)
+
+    if output_format == "json":
+        typer.echo(json.dumps([dataclasses.asdict(hit) for hit in hits], indent=2))
+        return
+
+    if not hits:
+        typer.echo("No matches.")
+        return
+    for hit in hits:
+        link = f" <{hit.permalink}>" if hit.permalink else ""
+        typer.echo(f"[{hit.channel}] {hit.kind}: {hit.line}{link}")
 
 
 @app.command("rollup")

@@ -58,6 +58,7 @@ from thread_digest_bot.platforms import (
 from thread_digest_bot.render import render_chat_reply, render_markdown_entry
 from thread_digest_bot.rollup import build_rollup, rollup_label
 from thread_digest_bot.schedule import FakeScheduler, IntervalScheduler, Scheduler
+from thread_digest_bot.search import SearchHit, search_logs
 from thread_digest_bot.service import DigestOutcome, DigestService
 from thread_digest_bot.store import (
     AppendOnlyViolation,
@@ -116,6 +117,7 @@ __all__ = [
     "RawDecisionLog",
     "RawOpenQuestion",
     "Scheduler",
+    "SearchHit",
     "StoreConfig",
     "StoreError",
     "Thread",
@@ -132,6 +134,7 @@ __all__ = [
     "render_chat_reply",
     "render_markdown_entry",
     "rollup_label",
+    "search_logs",
     "slack_archives_permalink",
     "telegram_private_permalink",
     "telegram_public_permalink",
