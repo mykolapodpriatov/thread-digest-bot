@@ -55,7 +55,11 @@ from thread_digest_bot.platforms import (
     PlatformError,
     ThreadNotFoundError,
 )
-from thread_digest_bot.render import render_chat_reply, render_markdown_entry
+from thread_digest_bot.render import (
+    render_chat_reply,
+    render_json_entry,
+    render_markdown_entry,
+)
 from thread_digest_bot.rollup import build_rollup, rollup_label
 from thread_digest_bot.schedule import FakeScheduler, IntervalScheduler, Scheduler
 from thread_digest_bot.search import SearchHit, search_logs
@@ -132,6 +136,7 @@ __all__ = [
     "discord_permalink",
     "ground",
     "render_chat_reply",
+    "render_json_entry",
     "render_markdown_entry",
     "rollup_label",
     "search_logs",

@@ -1,16 +1,20 @@
-"""Rendering — ``DecisionLog`` -> Markdown log entry and -> chat reply.
+"""Rendering — ``DecisionLog`` -> Markdown log entry, chat reply, or JSON.
 
-Two surfaces:
+Three surfaces:
 
 * :func:`render_markdown_entry` produces the durable, append-only Markdown block
   committed to Git. Truncation is always noted so a partial digest is never presented
   as complete.
 * :func:`render_chat_reply` produces a compact, platform-safe plain-text reply.
+* :func:`render_json_entry` produces a machine-readable JSON document for downstream
+  pipelines and assertions.
 
-Both are pure functions of the log; no clock or network access.
+All are pure functions of the log; no clock or network access.
 """
 
 from __future__ import annotations
+
+import json
 
 from thread_digest_bot.types import Citation, DecisionLog
 
@@ -120,3 +124,64 @@ def render_chat_reply(log: DecisionLog) -> str:
         lines.append("No decisions, action items, or open questions found.")
 
     return "\n".join(lines)
+
+
+def _citation_json(citation: Citation) -> dict[str, str | None]:
+    """Serialize a citation to its presentation fields (author display, link, quote).
+
+    Per the provenance rule the author is emitted as its display name only; the id is
+    an internal join key and is intentionally omitted from the exported document.
+    """
+    return {
+        "author": citation.author.display,
+        "permalink": citation.permalink,
+        "quote": citation.quote,
+    }
+
+
+def render_json_entry(log: DecisionLog) -> str:
+    """Render a ``DecisionLog`` as a machine-readable JSON document.
+
+    Serializes the whole log — ``channel_id``, ``digest_key``, ``range_label``,
+    ``truncated``, ``participants``, and the ``decisions`` / ``action_items`` /
+    ``open_questions`` lists — with each citation reduced to its ``author`` display name,
+    ``permalink``, and ``quote``. Absent optional values are rendered as JSON ``null``.
+
+    Args:
+        log: The grounded decision log.
+
+    Returns:
+        A pretty-printed JSON string (no trailing newline) suitable for downstream
+        pipelines or test assertions.
+    """
+    payload: dict[str, object] = {
+        "channel_id": log.channel_id,
+        "digest_key": log.digest_key,
+        "range_label": log.range_label,
+        "truncated": log.truncated,
+        "participants": [author.display for author in log.participants],
+        "decisions": [
+            {
+                "statement": decision.statement,
+                "rationale": decision.rationale,
+                "citations": [_citation_json(c) for c in decision.citations],
+            }
+            for decision in log.decisions
+        ],
+        "action_items": [
+            {
+                "task": item.task,
+                "assignee": item.assignee.display if item.assignee else None,
+                "citations": [_citation_json(c) for c in item.citations],
+            }
+            for item in log.action_items
+        ],
+        "open_questions": [
+            {
+                "question": question.question,
+                "citations": [_citation_json(c) for c in question.citations],
+            }
+            for question in log.open_questions
+        ],
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False)

@@ -29,7 +29,7 @@ from thread_digest_bot.digest import digest
 from thread_digest_bot.ingest import ThreadInput, thread_from_input
 from thread_digest_bot.llm import LLMBackend
 from thread_digest_bot.llm.factory import build_llm
-from thread_digest_bot.render import render_chat_reply, render_markdown_entry
+from thread_digest_bot.render import render_chat_reply, render_json_entry, render_markdown_entry
 from thread_digest_bot.rollup import rollup_label
 from thread_digest_bot.search import search_logs
 from thread_digest_bot.store import DecisionStore, StoreConfig
@@ -44,10 +44,22 @@ app = typer.Typer(
 #: Exit code used for user-facing validation / not-found failures.
 EXIT_USAGE_ERROR = 2
 
+#: Valid ``digest-file --format`` values (``None`` keeps the default chat+md output).
+_DIGEST_FORMATS = frozenset({"chat", "md", "json"})
+
 
 def _err(message: str) -> None:
     """Print an error to stderr."""
     typer.echo(message, err=True)
+
+
+def _render_for_format(log: DecisionLog, output_format: str) -> str:
+    """Render ``log`` for a single explicit ``digest-file`` format."""
+    if output_format == "json":
+        return render_json_entry(log)
+    if output_format == "chat":
+        return render_chat_reply(log)
+    return render_markdown_entry(log)  # "md"
 
 
 def _load_thread_input(path: Path) -> ThreadInput:
@@ -112,8 +124,22 @@ def digest_file(
         str | None,
         typer.Option("--range-label", help="Override the digest range label."),
     ] = None,
+    output_format: Annotated[
+        str | None,
+        typer.Option(
+            "--format",
+            help="Output format: 'chat', 'md', or 'json'. Default prints chat reply + md.",
+        ),
+    ] = None,
 ) -> None:
     """Digest a thread JSON file offline into an attributed decision log."""
+    if output_format is not None and output_format not in _DIGEST_FORMATS:
+        _err(
+            f"Error: unknown --format {output_format!r}; "
+            f"expected one of {', '.join(sorted(_DIGEST_FORMATS))}."
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
     thread_input = _load_thread_input(thread_file)
     thread = thread_from_input(thread_input)
     llm = _build_llm_from_config(config, fixture)
@@ -125,13 +151,17 @@ def digest_file(
         _commit_entry(log, repo_root, config)
         typer.echo(f"Committed digest for channel {log.channel_id} into {repo_root}.")
     elif out is not None:
+        # Default to the Markdown entry (the committed audit format) unless overridden.
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(entry, encoding="utf-8")
+        out.write_text(_render_for_format(log, output_format or "md"), encoding="utf-8")
         typer.echo(f"Wrote digest to {out}.")
-    else:
+    elif output_format is None:
+        # Preserve the original stdout behavior: compact chat reply followed by the entry.
         typer.echo(render_chat_reply(log))
         typer.echo("")
         typer.echo(entry, nl=False)
+    else:
+        typer.echo(_render_for_format(log, output_format))
 
 
 def _commit_entry(log: DecisionLog, repo_root: Path, config_path: Path | None) -> None:
