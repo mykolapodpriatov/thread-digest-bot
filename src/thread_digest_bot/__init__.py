@@ -39,6 +39,7 @@ from thread_digest_bot.ingest import (
 from thread_digest_bot.links import (
     discord_permalink,
     slack_archives_permalink,
+    slack_thread_reply_permalink,
     telegram_private_permalink,
     telegram_public_permalink,
 )
@@ -149,6 +150,7 @@ __all__ = [
     "rollup_label",
     "search_logs",
     "slack_archives_permalink",
+    "slack_thread_reply_permalink",
     "telegram_private_permalink",
     "telegram_public_permalink",
     "thread_from_dict",

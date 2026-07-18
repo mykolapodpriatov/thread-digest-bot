@@ -32,6 +32,7 @@ _SLACK_CHANNEL_RE = re.compile(r"^[A-Z][A-Z0-9]+$")
 __all__ = [
     "discord_permalink",
     "slack_archives_permalink",
+    "slack_thread_reply_permalink",
     "telegram_private_permalink",
     "telegram_public_permalink",
 ]
@@ -146,6 +147,53 @@ def slack_archives_permalink(
         return None
     digits = parts[0] + parts[1]
     return f"https://{ws}.slack.com/archives/{channel}/p{digits}"
+
+
+def slack_thread_reply_permalink(
+    workspace: str | None,
+    channel_id: str | None,
+    message_ts: str | None,
+    thread_ts: str | None,
+) -> str | None:
+    """Build a Slack permalink that deep-links to a reply *in its thread context*.
+
+    A top-level archive link opens a message on its own; a reply inside a thread needs
+    ``?thread_ts=<parent>&cid=<channel>`` appended so Slack opens the thread and scrolls
+    to the reply. The base link (and its workspace/channel/message-ts validation) is
+    reused verbatim from :func:`slack_archives_permalink`, and the parent ``thread_ts``
+    must itself be a well-formed ``<seconds>.<fraction>`` Slack timestamp.
+
+    Args:
+        workspace: The workspace subdomain (e.g. ``acme`` for ``acme.slack.com``).
+        channel_id: The channel id (e.g. ``C0123ABC``).
+        message_ts: The reply's own message timestamp (e.g. ``1700000000.000300``).
+        thread_ts: The parent (thread root) timestamp (e.g. ``1700000000.000200``).
+
+    Returns:
+        The thread-scoped archives URL, or ``None`` if any part is missing/malformed
+        (including a ``thread_ts`` that is not a well-formed timestamp), following the
+        module contract of never returning a plausible-but-wrong link.
+
+    Examples:
+        >>> slack_thread_reply_permalink("acme", "C0123ABC", "1700000000.000300", \
+"1700000000.000200")
+        'https://acme.slack.com/archives/C0123ABC/p1700000000000300?thread_ts=1700000000.000200&cid=C0123ABC'
+        >>> slack_thread_reply_permalink("acme", "C0123ABC", "1700000000.000300", \
+"1700.0.2") is None
+        True
+        >>> slack_thread_reply_permalink("acme", "bad channel", "1700000000.000300", \
+"1700000000.000200") is None
+        True
+    """
+    base = slack_archives_permalink(workspace, channel_id, message_ts)
+    if base is None or channel_id is None or not thread_ts:
+        return None
+    parent = thread_ts.strip()
+    parts = parent.split(".")
+    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+        return None
+    channel = channel_id.strip()
+    return f"{base}?thread_ts={parent}&cid={channel}"
 
 
 def discord_permalink(
