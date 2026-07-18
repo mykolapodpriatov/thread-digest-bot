@@ -1,8 +1,14 @@
-"""Render tests — Markdown entry and chat reply shapes, deep links, truncation."""
+"""Render tests — Markdown entry, chat reply, and JSON shapes; deep links, truncation."""
 
 from __future__ import annotations
 
-from thread_digest_bot.render import render_chat_reply, render_markdown_entry
+import json
+
+from thread_digest_bot.render import (
+    render_chat_reply,
+    render_json_entry,
+    render_markdown_entry,
+)
 from thread_digest_bot.types import (
     ActionItem,
     Author,
@@ -120,3 +126,47 @@ def test_chat_reply_empty_log() -> None:
     log = DecisionLog(channel_id="c", range_label="r", digest_key="k")
     reply = render_chat_reply(log)
     assert "No decisions, action items, or open questions found." in reply
+
+
+def test_json_entry_serializes_full_log() -> None:
+    payload = json.loads(render_json_entry(_full_log()))
+
+    assert payload["channel_id"] == "team-eng"
+    assert payload["digest_key"] == "abc123"
+    assert payload["range_label"] == "last 3 messages"
+    assert payload["truncated"] is False
+    assert payload["participants"] == ["Ada", "Bob"]
+
+    decision = payload["decisions"][0]
+    assert decision["statement"] == "Ship Friday"
+    assert decision["rationale"] == "QA passed"
+    citation = decision["citations"][0]
+    # Provenance fields, author as display only (no id leaked).
+    assert citation == {
+        "author": "Ada",
+        "permalink": "https://t.me/c/1/1",
+        "quote": "ship Friday",
+    }
+
+    action = payload["action_items"][0]
+    assert action["task"] == "Write release notes"
+    assert action["assignee"] == "Bob"
+    # An unassigned item serializes assignee as null.
+    assert payload["action_items"][1]["assignee"] is None
+
+    question = payload["open_questions"][0]
+    assert question["question"] == "Feature flag?"
+
+
+def test_json_entry_truncation_flag() -> None:
+    payload = json.loads(render_json_entry(_full_log(truncated=True)))
+    assert payload["truncated"] is True
+
+
+def test_json_entry_empty_log() -> None:
+    log = DecisionLog(channel_id="c", range_label="r", digest_key="k")
+    payload = json.loads(render_json_entry(log))
+    assert payload["decisions"] == []
+    assert payload["action_items"] == []
+    assert payload["open_questions"] == []
+    assert payload["participants"] == []

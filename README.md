@@ -68,6 +68,7 @@ DecisionStore(".", config=StoreConfig(commit=True)).append(log)
 | Command | Description |
 | --- | --- |
 | `digest-file THREAD.json [--out FILE] [--commit] [--repo-root DIR] [--config TOML] [--fixture NAME] [--range-label LABEL]` | Offline digest of a validated thread JSON into an attributed log. |
+| `search QUERY [--repo-root DIR] [--channel ID] [--format term\|json]` | Case-insensitive substring search over the committed decision logs. |
 | `rollup --channel ID --period weekly --period-key 2026-W25` | Build the label/identity for a periodic rollup. |
 | `run --config config.toml` | Start the configured bot(s) (live adapters land in M3). |
 
@@ -118,6 +119,7 @@ the identical pipeline on a cadence and dedup on their period.
 | `links` | Pure permalink builders (Telegram private/public, Slack archives). |
 | `render` | `DecisionLog` → Markdown entry and → chat reply. |
 | `store` | Append-only, idempotent, orphan-aware Git store (+ webhook export). |
+| `search` | Read-side substring search over the committed per-channel logs. |
 | `platforms/` | `ChatPlatform` protocol + `FakePlatform`; thin Telegram/Slack adapters. |
 | `schedule` | `Scheduler` protocol + interval and fake schedulers. |
 | `rollup` / `service` | Periodic rollups and the fetch→digest→post→store wiring. |
@@ -131,8 +133,9 @@ the identical pipeline on a cadence and dedup on their period.
 - [x] Append-only Markdown log committed to Git (idempotent, orphan-aware)
 - [x] Telegram/Slack deep-link builders; `ChatPlatform` protocol + `/digest` flow
 - [x] OpenAI / Anthropic / Ollama backends behind one interface
+- [x] Search over the committed decision logs (`search` command)
 - [ ] Live Telegram + Slack adapters; scheduled rollups in production (M3)
-- [ ] Webhook export; Discord adapter; search over the committed log (M4)
+- [ ] Webhook export; Discord adapter (M4)
 
 ## Development
 

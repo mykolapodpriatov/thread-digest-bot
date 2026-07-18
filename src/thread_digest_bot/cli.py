@@ -1,11 +1,12 @@
 """Command-line interface (``thread-digest-bot``).
 
-Three subcommands mirror the plan:
+Four subcommands mirror the plan:
 
 * ``digest-file`` — offline digest of a validated ``thread.json`` using the configured
   (or Fake) LLM; great for demos and CI. The thread file is validated against a strict
   Pydantic schema first, so a malformed file fails with a clear message and a non-zero
   exit code rather than a stack trace.
+* ``search`` — read-side substring search over the committed decision logs.
 * ``rollup`` — build a periodic rollup for a channel.
 * ``run`` — start the bot(s) from a config (platform adapters land in milestone M3).
 
@@ -15,6 +16,7 @@ All offline paths are deterministic: with the ``fake`` LLM provider, ``digest-fi
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Annotated
@@ -23,12 +25,14 @@ import typer
 from pydantic import ValidationError
 
 from thread_digest_bot.config import AppConfig, LLMConfig, StorageConfig, load_config
-from thread_digest_bot.digest import digest
+from thread_digest_bot.digest import digest_with_report
+from thread_digest_bot.grounding import GroundingReport
 from thread_digest_bot.ingest import ThreadInput, thread_from_input
 from thread_digest_bot.llm import LLMBackend
 from thread_digest_bot.llm.factory import build_llm
-from thread_digest_bot.render import render_chat_reply, render_markdown_entry
+from thread_digest_bot.render import render_chat_reply, render_json_entry, render_markdown_entry
 from thread_digest_bot.rollup import rollup_label
+from thread_digest_bot.search import search_logs
 from thread_digest_bot.store import DecisionStore, StoreConfig
 from thread_digest_bot.types import DecisionLog
 
@@ -41,10 +45,30 @@ app = typer.Typer(
 #: Exit code used for user-facing validation / not-found failures.
 EXIT_USAGE_ERROR = 2
 
+#: Valid ``digest-file --format`` values (``None`` keeps the default chat+md output).
+_DIGEST_FORMATS = frozenset({"chat", "md", "json"})
+
 
 def _err(message: str) -> None:
     """Print an error to stderr."""
     typer.echo(message, err=True)
+
+
+def _render_for_format(log: DecisionLog, output_format: str) -> str:
+    """Render ``log`` for a single explicit ``digest-file`` format."""
+    if output_format == "json":
+        return render_json_entry(log)
+    if output_format == "chat":
+        return render_chat_reply(log)
+    return render_markdown_entry(log)  # "md"
+
+
+def _print_grounding_report(report: GroundingReport) -> None:
+    """Print the grounding drop report to stderr (keeps stdout machine-clean)."""
+    _err("Grounding report:")
+    _err(f"  dropped hallucinated citations: {report.dropped_hallucinated_citations}")
+    _err(f"  dropped invalid quotes: {report.dropped_invalid_quotes}")
+    _err(f"  dropped zero-citation items: {report.dropped_zero_citation_items}")
 
 
 def _load_thread_input(path: Path) -> ThreadInput:
@@ -109,26 +133,51 @@ def digest_file(
         str | None,
         typer.Option("--range-label", help="Override the digest range label."),
     ] = None,
+    output_format: Annotated[
+        str | None,
+        typer.Option(
+            "--format",
+            help="Output format: 'chat', 'md', or 'json'. Default prints chat reply + md.",
+        ),
+    ] = None,
+    stats: Annotated[
+        bool,
+        typer.Option("--stats", help="Print a grounding drop report to stderr."),
+    ] = False,
 ) -> None:
     """Digest a thread JSON file offline into an attributed decision log."""
+    if output_format is not None and output_format not in _DIGEST_FORMATS:
+        _err(
+            f"Error: unknown --format {output_format!r}; "
+            f"expected one of {', '.join(sorted(_DIGEST_FORMATS))}."
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
     thread_input = _load_thread_input(thread_file)
     thread = thread_from_input(thread_input)
     llm = _build_llm_from_config(config, fixture)
 
-    log = digest(thread, llm, range_label=range_label)
+    log, report = digest_with_report(thread, llm, range_label=range_label)
     entry = render_markdown_entry(log)
 
     if commit:
         _commit_entry(log, repo_root, config)
         typer.echo(f"Committed digest for channel {log.channel_id} into {repo_root}.")
     elif out is not None:
+        # Default to the Markdown entry (the committed audit format) unless overridden.
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(entry, encoding="utf-8")
+        out.write_text(_render_for_format(log, output_format or "md"), encoding="utf-8")
         typer.echo(f"Wrote digest to {out}.")
-    else:
+    elif output_format is None:
+        # Preserve the original stdout behavior: compact chat reply followed by the entry.
         typer.echo(render_chat_reply(log))
         typer.echo("")
         typer.echo(entry, nl=False)
+    else:
+        typer.echo(_render_for_format(log, output_format))
+
+    if stats:
+        _print_grounding_report(report)
 
 
 def _commit_entry(log: DecisionLog, repo_root: Path, config_path: Path | None) -> None:
@@ -144,6 +193,49 @@ def _commit_entry(log: DecisionLog, repo_root: Path, config_path: Path | None) -
         store_config = StoreConfig(commit=True)
     store = DecisionStore(repo_root, config=store_config)
     store.append(log)
+
+
+@app.command("search")
+def search(
+    query: Annotated[
+        str,
+        typer.Argument(help="Case-insensitive substring to find across the decision logs."),
+    ],
+    repo_root: Annotated[
+        Path,
+        typer.Option("--repo-root", help="Repo root containing docs/decisions."),
+    ] = Path(),
+    channel: Annotated[
+        str | None,
+        typer.Option("--channel", help="Restrict the search to a single channel id."),
+    ] = None,
+    output_format: Annotated[
+        str,
+        typer.Option("--format", help="Output format: 'term' (default) or 'json'."),
+    ] = "term",
+) -> None:
+    """Search the committed decision logs for a substring.
+
+    Reads ``docs/decisions/<channel>.md`` back into entries and matches the query against
+    each decision, action item, and open question. A repository with no ``docs/decisions``
+    directory yields no matches rather than an error.
+    """
+    if output_format not in {"term", "json"}:
+        _err(f"Error: unknown --format {output_format!r}; expected 'term' or 'json'.")
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    hits = search_logs(repo_root, query, channel=channel)
+
+    if output_format == "json":
+        typer.echo(json.dumps([dataclasses.asdict(hit) for hit in hits], indent=2))
+        return
+
+    if not hits:
+        typer.echo("No matches.")
+        return
+    for hit in hits:
+        link = f" <{hit.permalink}>" if hit.permalink else ""
+        typer.echo(f"[{hit.channel}] {hit.kind}: {hit.line}{link}")
 
 
 @app.command("rollup")

@@ -11,7 +11,7 @@ The prompt is explicit that citations must reference the shown message ids and m
 
 from __future__ import annotations
 
-from thread_digest_bot.grounding import GroundingPolicy, ground
+from thread_digest_bot.grounding import GroundingPolicy, GroundingReport, ground_with_report
 from thread_digest_bot.llm import LLMBackend, RawDecisionLog
 from thread_digest_bot.types import DecisionLog, Thread
 
@@ -57,6 +57,50 @@ def build_prompt(thread: Thread) -> str:
     return "\n".join(lines)
 
 
+def digest_with_report(
+    thread: Thread,
+    llm: LLMBackend,
+    *,
+    range_label: str | None = None,
+    policy: GroundingPolicy | None = None,
+    digest_key: str | None = None,
+) -> tuple[DecisionLog, GroundingReport]:
+    """Digest a thread and also return the grounding drop report.
+
+    Identical to :func:`digest`, but additionally returns the
+    :class:`~thread_digest_bot.grounding.GroundingReport` for the single grounding pass —
+    letting callers (e.g. ``digest-file --stats``) surface what was dropped without a
+    second LLM call.
+
+    Args:
+        thread: The normalized thread to digest.
+        llm: A structured-output backend implementing
+            :class:`~thread_digest_bot.llm.LLMBackend`.
+        range_label: Human-readable label for the digested range; defaults to a label
+            derived from the message count.
+        policy: Grounding policy override.
+        digest_key: Optional pre-computed idempotency key (see :func:`digest`).
+
+    Returns:
+        A ``(DecisionLog, GroundingReport)`` pair.
+
+    Raises:
+        thread_digest_bot.llm.LLMError: If the backend cannot return schema-valid
+            output after one bounded retry.
+    """
+    label = range_label or _default_range_label(thread)
+
+    if not thread.messages:
+        raw_log = RawDecisionLog()
+    else:
+        prompt = build_prompt(thread)
+        raw_log = llm.complete_json(prompt, RawDecisionLog)
+
+    return ground_with_report(
+        raw_log, thread, range_label=label, policy=policy, digest_key=digest_key
+    )
+
+
 def digest(
     thread: Thread,
     llm: LLMBackend,
@@ -68,7 +112,8 @@ def digest(
     """Digest a thread into a grounded :class:`DecisionLog`.
 
     For an empty thread the LLM is not invoked; an empty (but well-formed) log is
-    returned so callers and the store behave uniformly.
+    returned so callers and the store behave uniformly. A thin wrapper over
+    :func:`digest_with_report` that discards the drop report.
 
     Args:
         thread: The normalized thread to digest.
@@ -88,15 +133,10 @@ def digest(
         thread_digest_bot.llm.LLMError: If the backend cannot return schema-valid
             output after one bounded retry.
     """
-    label = range_label or _default_range_label(thread)
-
-    if not thread.messages:
-        raw_log = RawDecisionLog()
-    else:
-        prompt = build_prompt(thread)
-        raw_log = llm.complete_json(prompt, RawDecisionLog)
-
-    return ground(raw_log, thread, range_label=label, policy=policy, digest_key=digest_key)
+    log, _report = digest_with_report(
+        thread, llm, range_label=range_label, policy=policy, digest_key=digest_key
+    )
+    return log
 
 
 def _default_range_label(thread: Thread) -> str:

@@ -82,6 +82,81 @@ def test_digest_file_commit_into_repo(tmp_path: Path) -> None:
     assert sum(1 for _ in repo.iter_commits()) == 1
 
 
+def test_digest_file_format_json_stdout_parses(tmp_path: Path) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(app, ["digest-file", str(thread_path), "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["channel_id"] == "team-eng"
+    assert payload["digest_key"]
+    assert isinstance(payload["decisions"], list)
+
+
+def test_digest_file_format_chat_only(tmp_path: Path) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(app, ["digest-file", str(thread_path), "--format", "chat"])
+    assert result.exit_code == 0
+    # Chat reply only — no Markdown header from the entry.
+    assert result.stdout.startswith("Digest — ")
+    assert "## " not in result.stdout
+
+
+def test_digest_file_format_md_only(tmp_path: Path) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(app, ["digest-file", str(thread_path), "--format", "md"])
+    assert result.exit_code == 0
+    assert result.stdout.startswith("## ")
+
+
+def test_digest_file_format_json_to_out_file(tmp_path: Path) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    out_path = tmp_path / "out.json"
+    result = runner.invoke(
+        app,
+        ["digest-file", str(thread_path), "--format", "json", "--out", str(out_path)],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["channel_id"] == "team-eng"
+
+
+def test_digest_file_invalid_format_exits(tmp_path: Path) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(app, ["digest-file", str(thread_path), "--format", "yaml"])
+    assert result.exit_code == EXIT_USAGE_ERROR
+    assert "unknown --format" in result.output
+
+
+def test_digest_file_stats_reports_hallucination_and_zero_item(tmp_path: Path) -> None:
+    # The invalid_ids fixture adds a decision citing a non-existent id, which is dropped
+    # (hallucinated citation) and leaves that item with zero citations.
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(
+        app, ["digest-file", str(thread_path), "--fixture", "invalid_ids", "--stats"]
+    )
+    assert result.exit_code == 0
+    assert "Grounding report:" in result.output
+    assert "dropped hallucinated citations: 1" in result.output
+    assert "dropped zero-citation items: 1" in result.output
+
+
+def test_digest_file_stats_reports_invalid_quote(tmp_path: Path) -> None:
+    # The fabricated_quote fixture cites a real message with a quote that is not in it.
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(
+        app, ["digest-file", str(thread_path), "--fixture", "fabricated_quote", "--stats"]
+    )
+    assert result.exit_code == 0
+    assert "dropped invalid quotes: 1" in result.output
+
+
+def test_digest_file_no_stats_by_default(tmp_path: Path) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(app, ["digest-file", str(thread_path)])
+    assert result.exit_code == 0
+    assert "Grounding report:" not in result.output
+
+
 def test_digest_file_missing_file_nonzero_exit(tmp_path: Path) -> None:
     result = runner.invoke(app, ["digest-file", str(tmp_path / "nope.json")])
     assert result.exit_code == EXIT_USAGE_ERROR

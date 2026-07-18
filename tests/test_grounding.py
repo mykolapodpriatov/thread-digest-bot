@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from thread_digest_bot.grounding import GroundingPolicy, ground
+from thread_digest_bot.grounding import GroundingPolicy, ground, ground_with_report
 from thread_digest_bot.llm import (
     RawActionItem,
     RawCitation,
@@ -227,3 +227,56 @@ def test_blank_quote_becomes_none(blank: str) -> None:
     )
     log = ground(raw, _thread(), range_label="r")
     assert log.decisions[0].citations[0].quote is None
+
+
+def test_grounding_report_counts_hallucination_invalid_quote_and_zero_item() -> None:
+    # A raw log that trips every drop path: a hallucinated id (which also leaves its item
+    # zero-citation), plus a valid id carrying a non-substring quote.
+    raw = RawDecisionLog(
+        decisions=[
+            RawDecision(
+                statement="Ship",
+                citations=[
+                    RawCitation(message_id="m1", quote="a quote that was never written"),
+                ],
+            ),
+            RawDecision(
+                statement="Ghost decision",
+                citations=[RawCitation(message_id="ghost-id")],
+            ),
+        ]
+    )
+    log, report = ground_with_report(raw, _thread(), range_label="r")
+
+    assert report.dropped_hallucinated_citations == 1
+    assert report.dropped_invalid_quotes == 1
+    assert report.dropped_zero_citation_items == 1
+    assert report.total_dropped == 3
+    assert not report.is_clean()
+    # The surviving decision kept its (valid) citation but nulled the invalid quote.
+    assert [d.statement for d in log.decisions] == ["Ship"]
+    assert log.decisions[0].citations[0].quote is None
+
+
+def test_grounding_report_clean_for_fully_valid_log() -> None:
+    raw = RawDecisionLog(
+        decisions=[
+            RawDecision(
+                statement="Ship",
+                citations=[RawCitation(message_id="m1", quote="ship the onboarding flow")],
+            )
+        ]
+    )
+    _log, report = ground_with_report(raw, _thread(), range_label="r")
+    assert report.is_clean()
+    assert report.total_dropped == 0
+
+
+def test_ground_matches_ground_with_report_log() -> None:
+    # The backward-compatible ground() returns exactly the log ground_with_report() does.
+    raw = RawDecisionLog(
+        decisions=[RawDecision(statement="Ship", citations=[RawCitation(message_id="m1")])]
+    )
+    only_log = ground(raw, _thread(), range_label="r")
+    log, _report = ground_with_report(raw, _thread(), range_label="r")
+    assert only_log == log

@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 
 from thread_digest_bot.links import (
+    discord_permalink,
     slack_archives_permalink,
+    slack_thread_reply_permalink,
     telegram_private_permalink,
     telegram_public_permalink,
 )
@@ -67,6 +69,48 @@ def test_telegram_public_bad_message_id_returns_none() -> None:
     assert telegram_public_permalink("acmehq", 0) is None
 
 
+def test_discord_permalink_shape() -> None:
+    url = discord_permalink(112233445566778899, 998877665544332211, 123456789012345678)
+    assert url == (
+        "https://discord.com/channels/112233445566778899/998877665544332211/123456789012345678"
+    )
+
+
+def test_discord_permalink_accepts_string_inputs() -> None:
+    assert discord_permalink("42", "7", "9") == "https://discord.com/channels/42/7/9"
+
+
+def test_discord_permalink_dm_form_when_guild_is_none() -> None:
+    # A DM channel has no guild, so the ``@me`` sentinel stands in for the guild segment.
+    assert discord_permalink(None, 7, 9) == "https://discord.com/channels/@me/7/9"
+
+
+def test_discord_permalink_trims_whitespace() -> None:
+    assert discord_permalink("  42  ", " 7 ", " 9 ") == "https://discord.com/channels/42/7/9"
+
+
+@pytest.mark.parametrize(
+    ("guild", "channel", "message"),
+    [
+        (-1, 7, 9),  # negative guild id
+        (0, 7, 9),  # zero guild id
+        ("not-a-number", 7, 9),  # non-numeric guild id
+        (42, -7, 9),  # negative channel id
+        (42, 0, 9),  # zero channel id
+        (42, "x", 9),  # non-numeric channel id
+        (42, 7, -9),  # negative message id
+        (42, 7, 0),  # zero message id
+        (42, 7, "y"),  # non-numeric message id
+        (None, 0, 9),  # DM form still validates channel id
+        (None, 7, -1),  # DM form still validates message id
+    ],
+)
+def test_discord_permalink_unsupported_shapes_return_none(
+    guild: object, channel: object, message: object
+) -> None:
+    assert discord_permalink(guild, channel, message) is None  # type: ignore[arg-type]
+
+
 def test_slack_archives_permalink_shape() -> None:
     url = slack_archives_permalink("acme", "C0123ABC", "1700000000.000200")
     assert url == "https://acme.slack.com/archives/C0123ABC/p1700000000000200"
@@ -77,6 +121,43 @@ def test_slack_archives_permalink_trims_padded_inputs() -> None:
     # (which would yield ``https:// acme .slack.com/archives/ C0123ABC /p…``).
     url = slack_archives_permalink("  acme  ", "  C0123ABC  ", "  1700000000.000200  ")
     assert url == "https://acme.slack.com/archives/C0123ABC/p1700000000000200"
+
+
+def test_slack_thread_reply_permalink_shape() -> None:
+    url = slack_thread_reply_permalink("acme", "C0123ABC", "1700000000.000300", "1700000000.000200")
+    assert url == (
+        "https://acme.slack.com/archives/C0123ABC/p1700000000000300"
+        "?thread_ts=1700000000.000200&cid=C0123ABC"
+    )
+
+
+def test_slack_thread_reply_permalink_trims_padded_inputs() -> None:
+    url = slack_thread_reply_permalink(
+        "  acme  ", "  C0123ABC  ", "  1700000000.000300  ", "  1700000000.000200  "
+    )
+    assert url == (
+        "https://acme.slack.com/archives/C0123ABC/p1700000000000300"
+        "?thread_ts=1700000000.000200&cid=C0123ABC"
+    )
+
+
+@pytest.mark.parametrize(
+    ("workspace", "channel", "message_ts", "thread_ts"),
+    [
+        (None, "C0123ABC", "1700000000.000300", "1700000000.000200"),  # missing workspace
+        ("acme", None, "1700000000.000300", "1700000000.000200"),  # missing channel
+        ("acme", "bad channel", "1700000000.000300", "1700000000.000200"),  # bad channel
+        ("acme", "C0123ABC", "not-a-ts", "1700000000.000200"),  # bad message ts
+        ("acme", "C0123ABC", "1700000000.000300", None),  # missing thread ts
+        ("acme", "C0123ABC", "1700000000.000300", "1700.0.2"),  # malformed thread ts
+        ("acme", "C0123ABC", "1700000000.000300", "not-a-ts"),  # non-numeric thread ts
+        ("acme", "C0123ABC", "1700000000.000300", "   "),  # blank thread ts
+    ],
+)
+def test_slack_thread_reply_unsupported_shapes_return_none(
+    workspace: str | None, channel: str | None, message_ts: str | None, thread_ts: str | None
+) -> None:
+    assert slack_thread_reply_permalink(workspace, channel, message_ts, thread_ts) is None
 
 
 @pytest.mark.parametrize(
