@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from thread_digest_bot.links import (
+    discord_permalink,
     slack_archives_permalink,
     telegram_private_permalink,
     telegram_public_permalink,
@@ -65,6 +66,48 @@ def test_telegram_public_invalid_username_returns_none(username: str | None) -> 
 
 def test_telegram_public_bad_message_id_returns_none() -> None:
     assert telegram_public_permalink("acmehq", 0) is None
+
+
+def test_discord_permalink_shape() -> None:
+    url = discord_permalink(112233445566778899, 998877665544332211, 123456789012345678)
+    assert url == (
+        "https://discord.com/channels/112233445566778899/998877665544332211/123456789012345678"
+    )
+
+
+def test_discord_permalink_accepts_string_inputs() -> None:
+    assert discord_permalink("42", "7", "9") == "https://discord.com/channels/42/7/9"
+
+
+def test_discord_permalink_dm_form_when_guild_is_none() -> None:
+    # A DM channel has no guild, so the ``@me`` sentinel stands in for the guild segment.
+    assert discord_permalink(None, 7, 9) == "https://discord.com/channels/@me/7/9"
+
+
+def test_discord_permalink_trims_whitespace() -> None:
+    assert discord_permalink("  42  ", " 7 ", " 9 ") == "https://discord.com/channels/42/7/9"
+
+
+@pytest.mark.parametrize(
+    ("guild", "channel", "message"),
+    [
+        (-1, 7, 9),  # negative guild id
+        (0, 7, 9),  # zero guild id
+        ("not-a-number", 7, 9),  # non-numeric guild id
+        (42, -7, 9),  # negative channel id
+        (42, 0, 9),  # zero channel id
+        (42, "x", 9),  # non-numeric channel id
+        (42, 7, -9),  # negative message id
+        (42, 7, 0),  # zero message id
+        (42, 7, "y"),  # non-numeric message id
+        (None, 0, 9),  # DM form still validates channel id
+        (None, 7, -1),  # DM form still validates message id
+    ],
+)
+def test_discord_permalink_unsupported_shapes_return_none(
+    guild: object, channel: object, message: object
+) -> None:
+    assert discord_permalink(guild, channel, message) is None  # type: ignore[arg-type]
 
 
 def test_slack_archives_permalink_shape() -> None:

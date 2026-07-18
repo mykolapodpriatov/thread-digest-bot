@@ -32,6 +32,7 @@ from thread_digest_bot.ingest import (
     thread_from_json,
 )
 from thread_digest_bot.links import (
+    discord_permalink,
     slack_archives_permalink,
     telegram_private_permalink,
     telegram_public_permalink,
@@ -126,6 +127,7 @@ __all__ = [
     "compute_digest_key",
     "compute_rollup_key",
     "digest",
+    "discord_permalink",
     "ground",
     "render_chat_reply",
     "render_markdown_entry",

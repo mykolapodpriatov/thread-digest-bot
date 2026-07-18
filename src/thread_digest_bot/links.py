@@ -29,6 +29,13 @@ _SLACK_WORKSPACE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 #: letter followed by uppercase letters and digits.
 _SLACK_CHANNEL_RE = re.compile(r"^[A-Z][A-Z0-9]+$")
 
+__all__ = [
+    "discord_permalink",
+    "slack_archives_permalink",
+    "telegram_private_permalink",
+    "telegram_public_permalink",
+]
+
 
 def telegram_private_permalink(chat_id: int | str, message_id: int | str) -> str | None:
     """Build a private Telegram channel/supergroup permalink.
@@ -139,6 +146,54 @@ def slack_archives_permalink(
         return None
     digits = parts[0] + parts[1]
     return f"https://{ws}.slack.com/archives/{channel}/p{digits}"
+
+
+def discord_permalink(
+    guild_id: int | str | None,
+    channel_id: int | str,
+    message_id: int | str,
+) -> str | None:
+    """Build a Discord message permalink from snowflake ids.
+
+    Discord jump links use ``https://discord.com/channels/<guild>/<channel>/<message>``
+    where each segment is a snowflake id. Direct-message channels have no guild, so the
+    literal ``@me`` stands in for the guild segment when ``guild_id`` is ``None``.
+
+    Args:
+        guild_id: The guild (server) snowflake id, or ``None`` for a direct message
+            (which renders the ``@me`` guild segment).
+        channel_id: The channel snowflake id.
+        message_id: The message snowflake id.
+
+    Returns:
+        The Discord permalink, or ``None`` if ``channel_id`` or ``message_id`` is not a
+        positive integer, or a supplied ``guild_id`` is not a positive integer. Following
+        the module contract, an unknown shape yields ``None`` rather than a guessed link.
+
+    Examples:
+        >>> discord_permalink(112233445566778899, 998877665544332211, 123456789012345678)
+        'https://discord.com/channels/112233445566778899/998877665544332211/123456789012345678'
+        >>> discord_permalink(None, 998877665544332211, 123456789012345678)
+        'https://discord.com/channels/@me/998877665544332211/123456789012345678'
+        >>> discord_permalink("  42  ", " 7 ", " 9 ")
+        'https://discord.com/channels/42/7/9'
+        >>> discord_permalink(-1, 7, 9) is None
+        True
+        >>> discord_permalink(42, "not-a-number", 9) is None
+        True
+    """
+    channel = _coerce_positive_int(channel_id)
+    message = _coerce_positive_int(message_id)
+    if channel is None or message is None:
+        return None
+    if guild_id is None:
+        guild = "@me"
+    else:
+        guild_num = _coerce_positive_int(guild_id)
+        if guild_num is None:
+            return None
+        guild = str(guild_num)
+    return f"https://discord.com/channels/{guild}/{channel}/{message}"
 
 
 def _coerce_positive_int(value: int | str) -> int | None:
