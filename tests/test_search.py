@@ -134,3 +134,59 @@ def test_search_cli_invalid_format_exits(tmp_path: Path) -> None:
     result = runner.invoke(app, ["search", "x", "--repo-root", str(tmp_path), "--format", "xml"])
     assert result.exit_code == EXIT_USAGE_ERROR
     assert "unknown --format" in result.output
+
+
+def test_search_cli_kind_filter_term_output(
+    temp_git_repo: Path, sample_messages_fixture: list[Message]
+) -> None:
+    _seed(temp_git_repo, "team-eng", sample_messages_fixture)
+    # "release notes" only lives in the action item, so a decision-kind filter finds none.
+    result = runner.invoke(
+        app,
+        ["search", "release notes", "--repo-root", str(temp_git_repo), "--kind", "decision"],
+    )
+    assert result.exit_code == 0
+    assert "No matches." in result.stdout
+
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "release notes",
+            "--repo-root",
+            str(temp_git_repo),
+            "--kind",
+            "action_item",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "action_item:" in result.stdout
+
+
+def test_search_cli_kind_filter_json_output(
+    temp_git_repo: Path, sample_messages_fixture: list[Message]
+) -> None:
+    _seed(temp_git_repo, "team-eng", sample_messages_fixture)
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "release notes",
+            "--repo-root",
+            str(temp_git_repo),
+            "--kind",
+            "action_item",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert len(payload) == 1
+    assert payload[0]["kind"] == "action_item"
+
+
+def test_search_cli_invalid_kind_exits(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["search", "x", "--repo-root", str(tmp_path), "--kind", "bug"])
+    assert result.exit_code == EXIT_USAGE_ERROR
+    assert "unknown --kind" in result.output
