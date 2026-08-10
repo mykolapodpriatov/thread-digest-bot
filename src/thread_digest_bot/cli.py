@@ -48,6 +48,9 @@ EXIT_USAGE_ERROR = 2
 #: Valid ``digest-file --format`` values (``None`` keeps the default chat+md output).
 _DIGEST_FORMATS = frozenset({"chat", "md", "json"})
 
+#: Valid ``search --kind`` values — mirrors :data:`thread_digest_bot.search._SECTION_KINDS`.
+_SEARCH_KINDS = frozenset({"decision", "action_item", "open_question"})
+
 
 def _err(message: str) -> None:
     """Print an error to stderr."""
@@ -209,6 +212,14 @@ def search(
         str | None,
         typer.Option("--channel", help="Restrict the search to a single channel id."),
     ] = None,
+    kind: Annotated[
+        str | None,
+        typer.Option(
+            "--kind",
+            help="Restrict the search to one item kind: 'decision', 'action_item', "
+            "or 'open_question'.",
+        ),
+    ] = None,
     output_format: Annotated[
         str,
         typer.Option("--format", help="Output format: 'term' (default) or 'json'."),
@@ -223,8 +234,11 @@ def search(
     if output_format not in {"term", "json"}:
         _err(f"Error: unknown --format {output_format!r}; expected 'term' or 'json'.")
         raise typer.Exit(code=EXIT_USAGE_ERROR)
+    if kind is not None and kind not in _SEARCH_KINDS:
+        _err(f"Error: unknown --kind {kind!r}; expected one of {', '.join(sorted(_SEARCH_KINDS))}.")
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
 
-    hits = search_logs(repo_root, query, channel=channel)
+    hits = search_logs(repo_root, query, channel=channel, kind=kind)
 
     if output_format == "json":
         typer.echo(json.dumps([dataclasses.asdict(hit) for hit in hits], indent=2))
