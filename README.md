@@ -59,7 +59,7 @@ python examples/demo.py
 from thread_digest_bot import digest, FakeLLM, thread_from_json, DecisionStore, StoreConfig
 
 thread = thread_from_json(open("examples/thread.json").read())
-log = digest(thread, FakeLLM("happy"))          # swap in an OpenAI/Anthropic/Ollama backend
+log = digest(thread, FakeLLM("happy"))  # swap in an OpenAI/Anthropic/Ollama backend
 DecisionStore(".", config=StoreConfig(commit=True)).append(log)
 ```
 
