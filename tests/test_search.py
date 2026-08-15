@@ -190,3 +190,75 @@ def test_search_cli_invalid_kind_exits(tmp_path: Path) -> None:
     result = runner.invoke(app, ["search", "x", "--repo-root", str(tmp_path), "--kind", "bug"])
     assert result.exit_code == EXIT_USAGE_ERROR
     assert "unknown --kind" in result.output
+
+
+def test_search_logs_honors_custom_decisions_dir(
+    temp_git_repo: Path, sample_messages_fixture: list[Message]
+) -> None:
+    thread = Thread(channel_id="team-eng", platform="telegram", messages=sample_messages_fixture)
+    log = digest(thread, FakeLLM("happy"))
+    store = DecisionStore(
+        temp_git_repo, config=StoreConfig(commit=True, decisions_dir="audit/logs")
+    )
+    store.append(log)
+
+    assert search_logs(temp_git_repo, "onboarding") == []
+    hits = search_logs(temp_git_repo, "onboarding", decisions_dir="audit/logs")
+    assert len(hits) == 1
+    assert hits[0].channel == "team-eng"
+
+
+def test_search_cli_config_uses_storage_decisions_dir(
+    temp_git_repo: Path, sample_messages_fixture: list[Message]
+) -> None:
+    # Commit into a non-default decisions_dir via digest-file --config, then search it.
+    config_path = temp_git_repo / "config.toml"
+    config_path.write_text(
+        "[llm]\nprovider = 'fake'\nfixture = 'happy'\n\n[storage]\ndecisions_dir = 'audit/logs'\n",
+        encoding="utf-8",
+    )
+    thread_path = temp_git_repo / "thread.json"
+    thread_path.write_text(
+        Thread(
+            channel_id="team-eng", platform="telegram", messages=sample_messages_fixture
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    committed = runner.invoke(
+        app,
+        [
+            "digest-file",
+            str(thread_path),
+            "--commit",
+            "--repo-root",
+            str(temp_git_repo),
+            "--config",
+            str(config_path),
+        ],
+    )
+    assert committed.exit_code == 0
+    assert (temp_git_repo / "audit/logs/team-eng.md").exists()
+    assert not (temp_git_repo / "docs/decisions/team-eng.md").exists()
+
+    found = runner.invoke(
+        app,
+        ["search", "onboarding", "--repo-root", str(temp_git_repo), "--config", str(config_path)],
+    )
+    assert found.exit_code == 0
+    assert "[team-eng]" in found.stdout
+    assert "onboarding" in found.stdout.lower()
+
+    # Without --config, search still looks at docs/decisions and must not invent a hit.
+    defaulted = runner.invoke(app, ["search", "onboarding", "--repo-root", str(temp_git_repo)])
+    assert defaulted.exit_code == 0
+    assert "No matches." in defaulted.stdout
+
+    # A config that still points at the default directory is equally a miss.
+    mismatch = temp_git_repo / "default.toml"
+    mismatch.write_text("[storage]\ndecisions_dir = 'docs/decisions'\n", encoding="utf-8")
+    missed = runner.invoke(
+        app,
+        ["search", "onboarding", "--repo-root", str(temp_git_repo), "--config", str(mismatch)],
+    )
+    assert missed.exit_code == 0
+    assert "No matches." in missed.stdout

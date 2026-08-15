@@ -68,7 +68,7 @@ DecisionStore(".", config=StoreConfig(commit=True)).append(log)
 | Command | Description |
 | --- | --- |
 | `digest-file THREAD.json [--out FILE] [--commit] [--repo-root DIR] [--config TOML] [--fixture NAME] [--range-label LABEL]` | Offline digest of a validated thread JSON into an attributed log. |
-| `search QUERY [--repo-root DIR] [--channel ID] [--kind decision\|action_item\|open_question] [--format term\|json]` | Case-insensitive substring search over the committed decision logs. |
+| `search QUERY [--repo-root DIR] [--channel ID] [--kind decision\|action_item\|open_question] [--format term\|json] [--config TOML]` | Case-insensitive substring search over the committed decision logs. |
 | `rollup --channel ID --period weekly --period-key 2026-W25` | Build the label/identity for a periodic rollup. |
 | `run --config config.toml` | Start the configured bot(s) (live adapters land in M3). |
 
