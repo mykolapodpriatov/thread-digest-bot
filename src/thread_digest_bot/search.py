@@ -6,11 +6,11 @@ parsing the per-channel Markdown files back into entries and matching a query ag
 the extracted decisions, action items, and open questions.
 
 Parsing is pure standard-library string work: no new dependencies, no Git calls, and no
-network. Each ``docs/decisions/<channel>.md`` file is split on the ``## <range label>``
+network. Each ``<decisions_dir>/<channel>.md`` file is split on the ``## <range label>``
 digest heading emitted by :func:`thread_digest_bot.render.render_markdown_entry`, and
 every item bullet under a ``### Decisions`` / ``### Action items`` / ``### Open questions``
 section becomes a searchable line carrying its channel, digest key, and (first) permalink.
-A missing ``docs/decisions`` directory yields an empty result rather than an error.
+A missing decisions directory yields an empty result rather than an error.
 """
 
 from __future__ import annotations
@@ -20,8 +20,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-#: Directory (relative to the repo root) holding the per-channel decision logs. Mirrors
-#: :attr:`thread_digest_bot.store.StoreConfig.decisions_dir`'s default.
+#: Default directory (relative to the repo root) holding the per-channel decision logs.
+#: Mirrors :attr:`thread_digest_bot.store.StoreConfig.decisions_dir`'s default. Callers
+#: that persist logs elsewhere pass ``decisions_dir=`` to :func:`search_logs`.
 _DECISIONS_DIR = "docs/decisions"
 
 #: The digest-entry heading emitted by ``render_markdown_entry`` (``## <range label>``).
@@ -146,6 +147,7 @@ def search_logs(
     *,
     channel: str | None = None,
     kind: str | None = None,
+    decisions_dir: str = _DECISIONS_DIR,
 ) -> list[SearchHit]:
     """Search the committed decision logs under ``root`` for ``query``.
 
@@ -154,18 +156,21 @@ def search_logs(
     by name, entries in document order, items in section order.
 
     Args:
-        root: The repository root containing ``docs/decisions``.
+        root: The repository root containing the decisions directory.
         query: The substring to match (case-insensitive).
         channel: When set, restrict matching to entries whose channel id equals this
             value.
         kind: When set, restrict matching to one item category (``"decision"``,
             ``"action_item"``, or ``"open_question"``).
+        decisions_dir: Directory (relative to ``root``) holding the per-channel logs.
+            Defaults to ``docs/decisions``; pass the configured
+            ``storage.decisions_dir`` when logs live elsewhere.
 
     Returns:
-        A list of :class:`SearchHit`. Empty (never an error) when ``docs/decisions`` does
-        not exist, so searching a fresh repository is a clean no-op.
+        A list of :class:`SearchHit`. Empty (never an error) when the decisions
+        directory does not exist, so searching a fresh repository is a clean no-op.
     """
-    decisions_path = Path(root) / _DECISIONS_DIR
+    decisions_path = Path(root) / decisions_dir
     if not decisions_path.is_dir():
         return []
 

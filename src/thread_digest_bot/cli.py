@@ -206,7 +206,7 @@ def search(
     ],
     repo_root: Annotated[
         Path,
-        typer.Option("--repo-root", help="Repo root containing docs/decisions."),
+        typer.Option("--repo-root", help="Repo root containing the decision logs."),
     ] = Path(),
     channel: Annotated[
         str | None,
@@ -224,12 +224,20 @@ def search(
         str,
         typer.Option("--format", help="Output format: 'term' (default) or 'json'."),
     ] = "term",
+    config: Annotated[
+        Path | None,
+        typer.Option(
+            "--config",
+            help="Config TOML; uses storage.decisions_dir when set.",
+        ),
+    ] = None,
 ) -> None:
     """Search the committed decision logs for a substring.
 
-    Reads ``docs/decisions/<channel>.md`` back into entries and matches the query against
-    each decision, action item, and open question. A repository with no ``docs/decisions``
-    directory yields no matches rather than an error.
+    Reads ``<decisions_dir>/<channel>.md`` back into entries and matches the query against
+    each decision, action item, and open question. ``decisions_dir`` defaults to
+    ``docs/decisions``; pass ``--config`` to use ``storage.decisions_dir`` from a TOML
+    file. A repository with no decisions directory yields no matches rather than an error.
     """
     if output_format not in {"term", "json"}:
         _err(f"Error: unknown --format {output_format!r}; expected 'term' or 'json'.")
@@ -238,7 +246,10 @@ def search(
         _err(f"Error: unknown --kind {kind!r}; expected one of {', '.join(sorted(_SEARCH_KINDS))}.")
         raise typer.Exit(code=EXIT_USAGE_ERROR)
 
-    hits = search_logs(repo_root, query, channel=channel, kind=kind)
+    search_kwargs: dict[str, str] = {}
+    if config is not None:
+        search_kwargs["decisions_dir"] = load_config(config).storage.decisions_dir
+    hits = search_logs(repo_root, query, channel=channel, kind=kind, **search_kwargs)
 
     if output_format == "json":
         typer.echo(json.dumps([dataclasses.asdict(hit) for hit in hits], indent=2))
