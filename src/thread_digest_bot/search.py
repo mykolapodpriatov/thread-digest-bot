@@ -83,6 +83,7 @@ class _Item:
 class _Entry:
     """A parsed digest entry (internal to parsing)."""
 
+    range_label: str = ""
     channel: str = ""
     digest_key: str = ""
     items: list[_Item] = field(default_factory=list)
@@ -105,9 +106,29 @@ def _split_entry_blocks(text: str) -> list[list[str]]:
     return blocks
 
 
+def _window_key(entry: _Entry) -> str:
+    """Return the string compared against ``since`` / ``until``.
+
+    The ``## <range label>`` heading is the window identity (``rollup_label()`` values
+    such as ``2026-W25`` / ``weekly 2026-W25``). Fall back to the digest key when a
+    block has no heading, so a hand-edited fragment still has something to compare.
+    """
+    return entry.range_label or entry.digest_key
+
+
+def _in_window(entry: _Entry, since: str | None, until: str | None) -> bool:
+    """Return whether ``entry`` falls inside the inclusive ``since`` / ``until`` bounds."""
+    key = _window_key(entry)
+    lower_ok = since is None or key >= since
+    upper_ok = until is None or key <= until
+    return lower_ok and upper_ok
+
+
 def _parse_entry(block: list[str]) -> _Entry:
-    """Parse one entry block into its channel, digest key, and item bullets."""
+    """Parse one entry block into its range label, channel, digest key, and items."""
     entry = _Entry()
+    if block and block[0].startswith(_ENTRY_HEADING_PREFIX):
+        entry.range_label = block[0][len(_ENTRY_HEADING_PREFIX) :].strip()
     current_kind: str | None = None
     pending: _Item | None = None
     for line in block:
@@ -148,6 +169,8 @@ def search_logs(
     channel: str | None = None,
     kind: str | None = None,
     decisions_dir: str = _DECISIONS_DIR,
+    since: str | None = None,
+    until: str | None = None,
 ) -> list[SearchHit]:
     """Search the committed decision logs under ``root`` for ``query``.
 
@@ -165,10 +188,14 @@ def search_logs(
         decisions_dir: Directory (relative to ``root``) holding the per-channel logs.
             Defaults to ``docs/decisions``; pass the configured
             ``storage.decisions_dir`` when logs live elsewhere.
+        since: Inclusive lower bound compared as a string against the entry's range
+            label (the ``## `` heading; falls back to the digest key).
+        until: Inclusive upper bound, same comparison as ``since``.
 
     Returns:
         A list of :class:`SearchHit`. Empty (never an error) when the decisions
         directory does not exist, so searching a fresh repository is a clean no-op.
+        An inverted window (``since`` > ``until``) also yields no hits.
     """
     decisions_path = Path(root) / decisions_dir
     if not decisions_path.is_dir():
@@ -181,6 +208,8 @@ def search_logs(
         for block in _split_entry_blocks(text):
             entry = _parse_entry(block)
             if channel is not None and entry.channel != channel:
+                continue
+            if not _in_window(entry, since, until):
                 continue
             for item in entry.items:
                 if kind is not None and item.kind != kind:
