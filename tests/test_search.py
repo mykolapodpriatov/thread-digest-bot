@@ -22,11 +22,24 @@ from thread_digest_bot.types import Message, Thread
 runner = CliRunner()
 
 
-def _seed(repo_root: Path, channel_id: str, messages: list[Message]) -> None:
+def _seed(
+    repo_root: Path,
+    channel_id: str,
+    messages: list[Message],
+    *,
+    range_label: str | None = None,
+    digest_key: str | None = None,
+) -> None:
     """Digest and commit a ``happy`` log for ``channel_id`` into ``repo_root``."""
     thread = Thread(channel_id=channel_id, platform="telegram", messages=messages)
-    log = digest(thread, FakeLLM("happy"))
+    log = digest(thread, FakeLLM("happy"), range_label=range_label, digest_key=digest_key)
     DecisionStore(repo_root, config=StoreConfig(commit=True)).append(log)
+
+
+def _seed_two_weeks(repo_root: Path, messages: list[Message]) -> None:
+    """Commit two onboarding entries labeled ``2026-W24`` and ``2026-W26``."""
+    _seed(repo_root, "team-eng", messages, range_label="2026-W24", digest_key="key-w24")
+    _seed(repo_root, "team-eng", messages, range_label="2026-W26", digest_key="key-w26")
 
 
 def test_search_finds_decision_with_provenance(
@@ -262,3 +275,121 @@ def test_search_cli_config_uses_storage_decisions_dir(
     )
     assert missed.exit_code == 0
     assert "No matches." in missed.stdout
+
+
+def test_search_since_until_returns_only_in_window_hit(
+    temp_git_repo: Path, sample_messages_fixture: list[Message]
+) -> None:
+    _seed_two_weeks(temp_git_repo, sample_messages_fixture)
+
+    both = search_logs(temp_git_repo, "onboarding")
+    assert {hit.digest_key for hit in both} == {"key-w24", "key-w26"}
+
+    windowed = search_logs(temp_git_repo, "onboarding", since="2026-W25", until="2026-W26")
+    assert [hit.digest_key for hit in windowed] == ["key-w26"]
+
+
+def test_search_since_alone_is_open_ended_lower_bound(
+    temp_git_repo: Path, sample_messages_fixture: list[Message]
+) -> None:
+    _seed_two_weeks(temp_git_repo, sample_messages_fixture)
+    hits = search_logs(temp_git_repo, "onboarding", since="2026-W25")
+    assert [hit.digest_key for hit in hits] == ["key-w26"]
+
+
+def test_search_cli_since_until_term_output(
+    temp_git_repo: Path, sample_messages_fixture: list[Message]
+) -> None:
+    _seed_two_weeks(temp_git_repo, sample_messages_fixture)
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "onboarding",
+            "--repo-root",
+            str(temp_git_repo),
+            "--since",
+            "2026-W25",
+            "--until",
+            "2026-W26",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "onboarding" in result.stdout.lower()
+    # Only one hit: the W26 entry. A second hit would repeat the channel prefix.
+    assert result.stdout.count("[team-eng]") == 1
+
+
+def test_search_cli_since_until_json_matches_term(
+    temp_git_repo: Path, sample_messages_fixture: list[Message]
+) -> None:
+    _seed_two_weeks(temp_git_repo, sample_messages_fixture)
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "onboarding",
+            "--repo-root",
+            str(temp_git_repo),
+            "--since",
+            "2026-W25",
+            "--until",
+            "2026-W26",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert len(payload) == 1
+    assert payload[0]["digest_key"] == "key-w26"
+    assert payload[0]["kind"] == "decision"
+
+
+def test_search_cli_since_alone_json(
+    temp_git_repo: Path, sample_messages_fixture: list[Message]
+) -> None:
+    _seed_two_weeks(temp_git_repo, sample_messages_fixture)
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "onboarding",
+            "--repo-root",
+            str(temp_git_repo),
+            "--since",
+            "2026-W25",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [hit["digest_key"] for hit in payload] == ["key-w26"]
+
+
+def test_search_cli_window_miss_prints_no_matches(
+    temp_git_repo: Path, sample_messages_fixture: list[Message]
+) -> None:
+    _seed_two_weeks(temp_git_repo, sample_messages_fixture)
+    result = runner.invoke(
+        app,
+        [
+            "search",
+            "onboarding",
+            "--repo-root",
+            str(temp_git_repo),
+            "--since",
+            "2026-W25",
+            "--until",
+            "2026-W25",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "No matches." in result.stdout
+
+
+def test_search_cli_invalid_window_exits() -> None:
+    result = runner.invoke(app, ["search", "x", "--since", "2026-W26", "--until", "2026-W24"])
+    assert result.exit_code == EXIT_USAGE_ERROR
+    assert "invalid window" in result.output
