@@ -157,6 +157,65 @@ def test_digest_file_no_stats_by_default(tmp_path: Path) -> None:
     assert "Grounding report:" not in result.output
 
 
+def test_digest_file_fail_on_drop_clean_fixture_exits_zero(tmp_path: Path) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(app, ["digest-file", str(thread_path), "--fail-on-drop"])
+    assert result.exit_code == 0
+    assert "Ship the new onboarding flow on Friday." in result.stdout
+    assert "Grounding report:" not in result.output
+
+
+def test_digest_file_fail_on_drop_exits_one_and_still_emits(
+    tmp_path: Path,
+) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(
+        app,
+        [
+            "digest-file",
+            str(thread_path),
+            "--fixture",
+            "invalid_ids",
+            "--fail-on-drop",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["channel_id"] == "team-eng"
+    assert "Grounding report:" in result.output
+    assert "dropped hallucinated citations: 1" in result.output
+
+
+def test_digest_file_fail_on_drop_still_emits_markdown(tmp_path: Path) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(
+        app,
+        [
+            "digest-file",
+            str(thread_path),
+            "--fixture",
+            "fabricated_quote",
+            "--fail-on-drop",
+            "--format",
+            "md",
+        ],
+    )
+    assert result.exit_code == 1
+    assert result.stdout.startswith("## ")
+    assert "dropped invalid quotes: 1" in result.output
+
+
+def test_digest_file_stats_without_fail_on_drop_stays_zero(tmp_path: Path) -> None:
+    thread_path = _write_thread(tmp_path, VALID_THREAD)
+    result = runner.invoke(
+        app, ["digest-file", str(thread_path), "--fixture", "invalid_ids", "--stats"]
+    )
+    assert result.exit_code == 0
+    assert "Grounding report:" in result.output
+
+
 def test_digest_file_missing_file_nonzero_exit(tmp_path: Path) -> None:
     result = runner.invoke(app, ["digest-file", str(tmp_path / "nope.json")])
     assert result.exit_code == EXIT_USAGE_ERROR

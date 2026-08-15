@@ -147,6 +147,13 @@ def digest_file(
         bool,
         typer.Option("--stats", help="Print a grounding drop report to stderr."),
     ] = False,
+    fail_on_drop: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-drop",
+            help="Exit 1 after writing if grounding dropped any citation, quote, or item.",
+        ),
+    ] = False,
 ) -> None:
     """Digest a thread JSON file offline into an attributed decision log."""
     if output_format is not None and output_format not in _DIGEST_FORMATS:
@@ -179,8 +186,10 @@ def digest_file(
     else:
         typer.echo(_render_for_format(log, output_format))
 
-    if stats:
+    if stats or (fail_on_drop and not report.is_clean()):
         _print_grounding_report(report)
+    if fail_on_drop and not report.is_clean():
+        raise typer.Exit(code=1)
 
 
 def _commit_entry(log: DecisionLog, repo_root: Path, config_path: Path | None) -> None:
