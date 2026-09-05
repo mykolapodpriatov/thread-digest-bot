@@ -45,17 +45,21 @@ parses as well-formed keys before trusting/committing it — a corrupt sidecar r
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal
 
 from thread_digest_bot.render import render_markdown_entry
 from thread_digest_bot.types import DecisionLog
+from thread_digest_bot.webhook import WebhookSink, delivery_for
 
 if TYPE_CHECKING:
     from git import Repo
+
+logger = logging.getLogger(__name__)
 
 OrphanPolicy = Literal["auto-commit", "raise"]
 
@@ -161,12 +165,15 @@ class AppendResult:
         skipped_duplicate: Whether the append was a no-op due to idempotency.
         path: The Markdown file written/targeted.
         commit_message: The commit message used (when committed).
+        commit_sha: The SHA of that commit, so an exported delivery can point
+            at the recorded decision rather than merely claiming one exists.
     """
 
     committed: bool
     skipped_duplicate: bool
     path: Path
     commit_message: str | None = None
+    commit_sha: str | None = None
 
 
 def _safe_channel_filename(channel_id: str) -> str:
@@ -275,21 +282,14 @@ class _FileLock:
             self._thread_lock.release()
 
 
-class WebhookSink(Protocol):
-    """A sink for exporting rendered entries instead of (or alongside) Git."""
-
-    def send(self, channel_id: str, entry: str) -> None:
-        """Deliver a rendered Markdown entry for ``channel_id``."""
-        ...
-
-
 class DecisionStore:
     """An append-only, idempotent decision-log store backed by a Git repo.
 
     Args:
         repo_root: Path to the Git working tree root.
         config: Store configuration.
-        webhook: Optional sink; when provided each appended entry is also exported.
+        webhook: Optional sink; when provided each COMMITTED entry is exported
+            after the commit lands. See :mod:`thread_digest_bot.webhook`.
     """
 
     def __init__(
@@ -549,11 +549,7 @@ class DecisionStore:
             # visible file is always the full old or full new content.
             _atomic_write_text(file_path, new_content)
 
-            # 6. Optional webhook export.
-            if self.webhook is not None:
-                self.webhook.send(log.channel_id, entry)
-
-            # 7. Commit both files in a SINGLE commit (atomic: HEAD never holds the
+            # 6. Commit both files in a SINGLE commit (atomic: HEAD never holds the
             #    entry without its processed key, or vice versa). The lock-ignore file
             #    (if newly created) rides in this same commit, adding no extra history.
             commit_message: str | None = None
@@ -566,20 +562,45 @@ class DecisionStore:
                 )
                 committed = True
 
-            return AppendResult(
+            result = AppendResult(
                 committed=committed,
                 skipped_duplicate=False,
                 path=file_path,
                 commit_message=commit_message,
+                commit_sha=self._head_sha() if committed else None,
             )
 
+        # 7. Export AFTER the commit and OUTSIDE the lock. Before the commit, a
+        #    delivery could report a decision that then failed to land, which is
+        #    worse than no delivery. Outside the lock, because a slow endpoint
+        #    must not hold the store against another writer.
+        self._export(log, result)
+        return result
 
-@dataclass
-class CollectingWebhookSink:
-    """An in-memory :class:`WebhookSink` capturing exported entries (for tests/demos)."""
+    def _export(self, log: DecisionLog, result: AppendResult) -> None:
+        """Hand a committed entry to the webhook sink, if there is one.
 
-    sent: list[tuple[str, str]] = field(default_factory=list)
+        Never raises. Git is the source of truth and a flaky endpoint cannot be
+        allowed to take an append down, so a sink that misbehaves is logged and
+        swallowed rather than propagated.
+        """
+        if self.webhook is None:
+            return
+        try:
+            self.webhook.send(
+                delivery_for(
+                    log,
+                    path=str(result.path),
+                    commit_sha=result.commit_sha,
+                    commit_message=result.commit_message,
+                )
+            )
+        except Exception:
+            logger.exception("webhook export failed for channel %s", log.channel_id)
 
-    def send(self, channel_id: str, entry: str) -> None:
-        """Record ``(channel_id, entry)``."""
-        self.sent.append((channel_id, entry))
+    def _head_sha(self) -> str | None:
+        """The SHA of the commit just created, or None when it cannot be read."""
+        try:
+            return str(self._git().head.commit.hexsha)
+        except Exception:
+            return None

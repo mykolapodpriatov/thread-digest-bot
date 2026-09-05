@@ -10,7 +10,6 @@ from git import Repo
 
 from thread_digest_bot.store import (
     AppendOnlyViolation,
-    CollectingWebhookSink,
     DecisionStore,
     OrphanStateError,
     StoreConfig,
@@ -18,6 +17,7 @@ from thread_digest_bot.store import (
     commit_message_for,
 )
 from thread_digest_bot.types import Author, Citation, Decision, DecisionLog
+from thread_digest_bot.webhook import CollectingWebhookSink
 
 
 def _log(digest_key: str = "key-1", *, statement: str = "Ship Friday") -> DecisionLog:
@@ -164,12 +164,15 @@ def test_orphan_raise_policy(temp_git_repo: Path) -> None:
 def test_webhook_export_path(temp_git_repo: Path) -> None:
     sink = CollectingWebhookSink()
     store = DecisionStore(temp_git_repo, webhook=sink)
-    store.append(_log())
+    result = store.append(_log())
 
     assert len(sink.sent) == 1
-    channel_id, entry = sink.sent[0]
-    assert channel_id == "team-eng"
-    assert "Ship Friday" in entry
+    delivery = sink.sent[0]
+    assert delivery.channel_id == "team-eng"
+    assert any("Ship Friday" in d["statement"] for d in delivery.decisions)
+    # Exported after the commit, so the delivery can point at it.
+    assert delivery.commit_sha == result.commit_sha
+    assert delivery.commit_sha
 
 
 def test_no_commit_mode_writes_without_git(tmp_path: Path) -> None:

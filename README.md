@@ -135,7 +135,53 @@ the identical pipeline on a cadence and dedup on their period.
 - [x] OpenAI / Anthropic / Ollama backends behind one interface
 - [x] Search over the committed decision logs (`search` command)
 - [ ] Live Telegram + Slack adapters; scheduled rollups in production (M3)
-- [ ] Webhook export; Discord adapter (M4)
+- [x] Webhook export (`HttpWebhookSink`)
+- [ ] Discord adapter (M4)
+
+## Webhook export
+
+A digest lands as an append-only Markdown entry in Git. That is the right home
+for it, and it used to be the only one, so nothing downstream could react to a
+decision being recorded.
+
+```python
+from thread_digest_bot import DecisionStore, HttpWebhookSink
+
+store = DecisionStore(
+    repo_root,
+    webhook=HttpWebhookSink(
+        urls=["https://hooks.example/decisions", os.environ["SLACK_WEBHOOK_URL"]],
+        secret=os.environ["DIGEST_WEBHOOK_SECRET"],
+    ),
+)
+```
+
+The payload is the structured facts plus the commit SHA and the path, not the
+rendered Markdown: a consumer that wants Markdown can render it, one that wants
+fields cannot un-render it.
+
+Three rules, and they are why this is a module rather than a `post()` in the
+store:
+
+- **Delivery happens after the commit, never before.** A webhook that fires for
+  a digest that then fails to commit reports a decision that is not recorded
+  anywhere. The delivery carries the SHA of the commit it is reporting.
+- **A failed delivery never fails the digest.** Git is the source of truth and a
+  flaky endpoint cannot be allowed to take it down. Failures are retried with
+  exponential backoff a bounded number of times, then logged and dropped. A sink
+  that raises is caught too.
+- **Redelivery is safe.** Every delivery carries a stable id derived from the
+  channel and the digest key, so a receiver can deduplicate a retry rather than
+  recording the same decision twice.
+
+With `secret` set, each request carries an HMAC-SHA256 of the exact body it
+sends in `X-Digest-Signature`, so a receiver can tell a real delivery from
+anything else that finds the URL. The secret comes from the environment, never
+the config file, matching how LLM keys are handled here. Neither the secret nor
+a URL query string appears in the payload or in a log line.
+
+Several endpoints can be fed from one pipeline; one failing never stops the
+others. `CollectingWebhookSink` is the in-memory sink for tests and demos.
 
 ## Development
 

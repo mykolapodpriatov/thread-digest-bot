@@ -91,6 +91,14 @@ from thread_digest_bot.types import (
     compute_digest_key,
     compute_rollup_key,
 )
+from thread_digest_bot.webhook import (
+    CollectingWebhookSink,
+    HttpWebhookSink,
+    WebhookDelivery,
+    WebhookSink,
+    delivery_for,
+    sign_body,
+)
 
 __version__ = "0.1.0"
 
@@ -101,6 +109,7 @@ __all__ = [
     "Author",
     "ChatPlatform",
     "Citation",
+    "CollectingWebhookSink",
     "CommandContext",
     "Decision",
     "DecisionLog",
@@ -113,6 +122,7 @@ __all__ = [
     "FetchError",
     "GroundingPolicy",
     "GroundingReport",
+    "HttpWebhookSink",
     "IntervalScheduler",
     "LLMBackend",
     "LLMError",
@@ -134,11 +144,14 @@ __all__ = [
     "Thread",
     "ThreadInput",
     "ThreadNotFoundError",
+    "WebhookDelivery",
+    "WebhookSink",
     "__version__",
     "build_prompt",
     "build_rollup",
     "compute_digest_key",
     "compute_rollup_key",
+    "delivery_for",
     "digest",
     "digest_with_report",
     "discord_permalink",
@@ -149,6 +162,7 @@ __all__ = [
     "render_markdown_entry",
     "rollup_label",
     "search_logs",
+    "sign_body",
     "slack_archives_permalink",
     "slack_thread_reply_permalink",
     "telegram_private_permalink",
