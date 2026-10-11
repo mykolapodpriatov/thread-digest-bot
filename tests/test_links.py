@@ -150,6 +150,7 @@ def test_slack_thread_reply_permalink_trims_padded_inputs() -> None:
         ("acme", "C0123ABC", "not-a-ts", "1700000000.000200"),  # bad message ts
         ("acme", "C0123ABC", "1700000000.000300", None),  # missing thread ts
         ("acme", "C0123ABC", "1700000000.000300", "1700.0.2"),  # malformed thread ts
+        ("acme", "C0123ABC", "1700000000.000300", "1700000000.2"),  # short thread ts
         ("acme", "C0123ABC", "1700000000.000300", "not-a-ts"),  # non-numeric thread ts
         ("acme", "C0123ABC", "1700000000.000300", "   "),  # blank thread ts
     ],
@@ -170,6 +171,8 @@ def test_slack_thread_reply_unsupported_shapes_return_none(
         ("acme", "C0123ABC", "17000.00ab"),  # non-digit -> rejected
         ("acme", "C0123ABC", "1700.000.200"),  # two dots -> malformed ts
         ("acme", "C0123ABC", "1700000000."),  # empty fraction -> rejected
+        ("acme", "C0123ABC", "1700000000.2"),  # one fractional digit
+        ("acme", "C0123ABC", "1700000000.20"),  # two fractional digits
         ("acme", "C0123ABC", ".000200"),  # empty seconds -> rejected
         ("acme", "C0123ABC", "."),  # both parts empty -> rejected
         ("acme", "bad channel", "1700000000.000200"),  # space in channel id -> rejected
