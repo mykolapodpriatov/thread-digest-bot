@@ -29,6 +29,18 @@ _SLACK_WORKSPACE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 #: letter followed by uppercase letters and digits.
 _SLACK_CHANNEL_RE = re.compile(r"^[A-Z][A-Z0-9]+$")
 
+
+def _is_slack_timestamp(ts: str) -> bool:
+    """True for ``<seconds>.<microseconds>`` with exactly six digits.
+
+    Slack's own ts is that string, and a permalink drops the dot. A shorter
+    fraction is a different string: dropping its dot builds a link that does
+    not open the message.
+    """
+    parts = ts.split(".")
+    return len(parts) == 2 and parts[0].isdigit() and len(parts[1]) == 6 and parts[1].isdigit()
+
+
 __all__ = [
     "discord_permalink",
     "slack_archives_permalink",
@@ -122,8 +134,7 @@ def slack_archives_permalink(
 
     Returns:
         The archives URL, or ``None`` if any part is missing/malformed or
-        ``message_ts`` is not a well-formed ``<seconds>.<fraction>`` timestamp (exactly
-        one ``.`` with all-digit parts).
+        ``message_ts`` is not ``<seconds>.<microseconds>`` with exactly six digits.
 
     Examples:
         >>> slack_archives_permalink("acme", "C0123ABC", "1700000000.000200")
@@ -140,12 +151,10 @@ def slack_archives_permalink(
     ts = message_ts.strip()
     if not _SLACK_WORKSPACE_RE.match(ws) or not _SLACK_CHANNEL_RE.match(channel):
         return None
-    # A well-formed Slack ts is exactly ``<seconds>.<fraction>`` with all-digit parts;
-    # reject anything with the wrong dot count or non-digit/empty parts.
-    parts = ts.split(".")
-    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+    if not _is_slack_timestamp(ts):
         return None
-    digits = parts[0] + parts[1]
+    seconds, fraction = ts.split(".")
+    digits = seconds + fraction
     return f"https://{ws}.slack.com/archives/{channel}/p{digits}"
 
 
@@ -161,7 +170,7 @@ def slack_thread_reply_permalink(
     ``?thread_ts=<parent>&cid=<channel>`` appended so Slack opens the thread and scrolls
     to the reply. The base link (and its workspace/channel/message-ts validation) is
     reused verbatim from :func:`slack_archives_permalink`, and the parent ``thread_ts``
-    must itself be a well-formed ``<seconds>.<fraction>`` Slack timestamp.
+    must itself be a Slack timestamp with exactly six microsecond digits.
 
     Args:
         workspace: The workspace subdomain (e.g. ``acme`` for ``acme.slack.com``).
@@ -189,8 +198,7 @@ def slack_thread_reply_permalink(
     if base is None or channel_id is None or not thread_ts:
         return None
     parent = thread_ts.strip()
-    parts = parent.split(".")
-    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+    if not _is_slack_timestamp(parent):
         return None
     channel = channel_id.strip()
     return f"{base}?thread_ts={parent}&cid={channel}"
