@@ -88,6 +88,20 @@ def test_markdown_notes_truncation() -> None:
     assert "may be incomplete" in md
 
 
+def test_markdown_newline_does_not_open_a_heading() -> None:
+    log = DecisionLog(
+        channel_id="c",
+        range_label="r",
+        decisions=[
+            Decision(statement="Ship\n## Injected\n- forged", citations=[]),
+        ],
+        digest_key="k",
+    )
+    md = render_markdown_entry(log)
+    assert "\n## Injected" not in md
+    assert "- Ship ## Injected - forged" in md
+
+
 def test_markdown_unsourced_marker_for_empty_citations() -> None:
     log = DecisionLog(
         channel_id="c",
